@@ -33,7 +33,7 @@ def _normalize_scope(
     Normalize a list of IPs/subnets into ipaddress network objects.
     """
 
-    networks: List[ipaddress._BaseNetwork] = []
+    networks: List[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for entry in scope:
         # Convert plain IPs to /32 or /128 networks for consistent checks.
         if "/" not in entry:

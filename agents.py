@@ -190,21 +190,20 @@ def make_orchestrator(context: AgentContext):
             )
 
         # Decide routing based on current state.
+        exploitation_results = state.get("exploitation_results", {})
+        pending_payload = exploitation_results.get("pending_payload")
+        approved = exploitation_results.get("approved")
+        exploitation_done = exploitation_results.get("exploitation_done")
+        access_level = exploitation_results.get("access_level")
+        post_done = exploitation_results.get("post_exploitation_done")
+
         if not state.get("recon_results"):
             decision = "recon"
-        elif state.get("exploitation_results", {}).get("pending_payload") and not state.get(
-            "exploitation_results", {}
-        ).get("approved"):
+        elif pending_payload and not approved:
             decision = "hitl"
-        elif not state.get("vulnerabilities"):
+        elif not state.get("vulnerabilities") or not exploitation_done:
             decision = "vuln"
-        elif state.get("vulnerabilities") and not state.get("exploitation_results", {}).get(
-            "exploitation_done"
-        ):
-            decision = "vuln"
-        elif state.get("exploitation_results", {}).get("access_level") and not state.get(
-            "exploitation_results", {}
-        ).get("post_exploitation_done"):
+        elif access_level and not post_done:
             decision = "post"
         else:
             decision = "report"
