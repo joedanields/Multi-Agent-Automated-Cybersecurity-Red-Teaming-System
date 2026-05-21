@@ -166,8 +166,7 @@ class DockerSandbox:
         if result.exit_code != 0:
             snippet = output[-self.config.error_output_limit :] if output else ""
             raise RuntimeError(
-                "Sandbox command failed. Output (truncated): "
-                f"{snippet}"
+                f"Sandbox command failed. Output (truncated): {snippet}"
             )
         return output
 

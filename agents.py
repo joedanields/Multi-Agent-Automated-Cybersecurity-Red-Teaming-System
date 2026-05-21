@@ -18,6 +18,10 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import requests
 from langchain_core.messages import HumanMessage, SystemMessage
+try:
+    from langchain_community.chat_models import ChatOllama
+except ImportError:  # pragma: no cover - optional dependency
+    ChatOllama = None
 
 from state import PentestState, VulnerabilityFinding
 from tools import ScopedToolset
@@ -33,7 +37,10 @@ class LocalLLM:
     """
 
     def __init__(self, model: str, base_url: Optional[str] = None):
-        from langchain_community.chat_models import ChatOllama
+        if ChatOllama is None:
+            raise ImportError(
+                "langchain_community is required for LocalLLM (ChatOllama)."
+            )
 
         self._client = ChatOllama(model=model, base_url=base_url)
 
@@ -304,7 +311,7 @@ def make_vuln_exploit_agent(context: AgentContext):
             for finding in vulnerabilities[:3]:
                 safe_cve = _sanitize_shell_fragment(finding["cve_id"])
                 payload_commands.append(
-                    f"echo Simulated_exploit_for_{safe_cve}"
+                    f"echo 'Simulated exploit for {safe_cve}'"
                 )
 
             payload_outputs = []
