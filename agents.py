@@ -23,6 +23,10 @@ from state import PentestState, VulnerabilityFinding
 from tools import ScopedToolset
 
 
+NVD_RESULTS_PER_PAGE = 20
+NVD_TIMEOUT_SECONDS = 30
+
+
 class LocalLLM:
     """
     Simple wrapper around a local chat model (defaults to Ollama).
@@ -92,13 +96,13 @@ def _nvd_lookup(keyword: str) -> List[Dict[str, Any]]:
 
     api_key = os.getenv("NVD_API_KEY")
     headers = {"apiKey": api_key} if api_key else {}
-    params = {"keywordSearch": keyword, "resultsPerPage": 20}
+    params = {"keywordSearch": keyword, "resultsPerPage": NVD_RESULTS_PER_PAGE}
     try:
         response = requests.get(
             "https://services.nvd.nist.gov/rest/json/cves/2.0",
             params=params,
             headers=headers,
-            timeout=30,
+            timeout=NVD_TIMEOUT_SECONDS,
         )
     except requests.Timeout as exc:
         raise RuntimeError(

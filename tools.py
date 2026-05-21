@@ -88,6 +88,7 @@ class SandboxConfig:
     tmux_socket_name: str = "redteam-sandbox"
     prompt_regex: str = r"\[sandbox\]\$ "
     command_timeout_seconds: int = 300
+    error_output_limit: int = 500
 
 
 class DockerSandbox:
@@ -163,7 +164,7 @@ class DockerSandbox:
         result = self.container.exec_run(command, stdout=True, stderr=True)
         output = result.output.decode(errors="replace")
         if result.exit_code != 0:
-            snippet = output[-500:] if output else ""
+            snippet = output[-self.config.error_output_limit :] if output else ""
             raise RuntimeError(
                 "Sandbox command failed. Output (truncated): "
                 f"{snippet}"
