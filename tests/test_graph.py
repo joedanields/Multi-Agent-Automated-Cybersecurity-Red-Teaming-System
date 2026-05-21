@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import pytest
-from langgraph.pregel import GraphInterrupt
+from langgraph.checkpoint.memory import InMemorySaver
 
 import agents
 import graph as graph_module
@@ -60,7 +60,7 @@ async def test_orchestrator_routes_to_vuln(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(graph_module, "make_vuln_exploit_agent", _stub_vuln_agent)
     monkeypatch.setattr(graph_module, "make_reporting_agent", _stub_report_agent)
 
-    graph = graph_module.build_graph(scope=["10.0.0.1"])
+    graph = graph_module.build_graph(scope=["10.0.0.1"], checkpointer=InMemorySaver())
     state = {
         "scope": ["10.0.0.1"],
         "recon_results": {"assets": []},
@@ -70,7 +70,7 @@ async def test_orchestrator_routes_to_vuln(monkeypatch: pytest.MonkeyPatch) -> N
         "report": "",
     }
 
-    result = await graph.ainvoke(state)
+    result = await graph.ainvoke(state, config={"configurable": {"thread_id": "test-thread"}})
     assert result["scan_results"]["vuln_ran"] is True
 
 
@@ -78,7 +78,7 @@ async def test_orchestrator_routes_to_vuln(monkeypatch: pytest.MonkeyPatch) -> N
 async def test_hitl_interrupt_halts_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(graph_module, "_build_context", _fake_context)
 
-    graph = graph_module.build_graph(scope=["10.0.0.1"])
+    graph = graph_module.build_graph(scope=["10.0.0.1"], checkpointer=InMemorySaver())
     state = {
         "scope": ["10.0.0.1"],
         "recon_results": {"assets": []},
@@ -97,9 +97,6 @@ async def test_hitl_interrupt_halts_execution(monkeypatch: pytest.MonkeyPatch) -
         "report": "",
     }
 
-    with pytest.raises(GraphInterrupt) as excinfo:
-        await graph.ainvoke(state)
-
-    payload = getattr(excinfo.value, "value", None) or getattr(excinfo.value, "data", None)
-    payload = payload or (excinfo.value.args[0] if excinfo.value.args else {})
-    assert "pending_payload" in str(payload)
+    result = await graph.ainvoke(state, config={"configurable": {"thread_id": "test-thread"}})
+    assert "__interrupt__" in result
+    assert "pending_payload" in str(result["__interrupt__"])

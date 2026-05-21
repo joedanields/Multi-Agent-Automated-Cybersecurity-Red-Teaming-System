@@ -208,7 +208,7 @@ class DockerSandbox:
             self._exec(tmux + ["new-session", "-d", "-s", session])
 
         # Standardize the shell prompt for reliable prompt detection.
-        prompt_command = f"export PS1='[sandbox]$ '"
+        prompt_command = "export PS1='[sandbox]$ '"
         self._exec(tmux + ["send-keys", "-t", session, prompt_command, "C-m"])
 
     def _wait_for_prompt(self, session: str, timeout: int) -> str:

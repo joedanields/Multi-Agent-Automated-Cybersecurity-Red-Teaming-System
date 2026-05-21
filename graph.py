@@ -10,7 +10,7 @@ import os
 from typing import Any, Dict, Optional
 
 from langgraph.graph import END, StateGraph
-from langgraph.pregel import interrupt
+from langgraph.types import interrupt
 
 from agents import (
     AgentContext,
@@ -68,6 +68,7 @@ def build_graph(
     scope: list[str],
     model: Optional[str] = None,
     base_url: Optional[str] = None,
+    checkpointer=None,
 ):
     """
     Build and compile the LangGraph StateGraph for the engagement.
@@ -114,4 +115,4 @@ def build_graph(
 
     graph.add_edge("report", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
