@@ -39,7 +39,8 @@ class LocalLLM:
     def __init__(self, model: str, base_url: Optional[str] = None):
         if ChatOllama is None:
             raise ImportError(
-                "langchain_community is required for LocalLLM (ChatOllama)."
+                "langchain_community is required for LocalLLM (ChatOllama). "
+                "Install with: pip install langchain-community"
             )
 
         self._client = ChatOllama(model=model, base_url=base_url)
@@ -116,7 +117,9 @@ def _nvd_lookup(keyword: str) -> List[Dict[str, Any]]:
             f"NVD API request timed out for keyword '{keyword}'."
         ) from exc
     except requests.RequestException as exc:
-        raise RuntimeError(f"NVD API request failed for keyword '{keyword}'.") from exc
+        raise RuntimeError(
+            f"NVD API request failed for keyword '{keyword}': {exc}"
+        ) from exc
 
     if response.status_code == 403:
         raise RuntimeError("NVD API access denied. Check the NVD_API_KEY.")

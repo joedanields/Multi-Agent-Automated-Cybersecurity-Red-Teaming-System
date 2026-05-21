@@ -164,7 +164,7 @@ class DockerSandbox:
         result = self.container.exec_run(command, stdout=True, stderr=True)
         output = result.output.decode(errors="replace")
         if result.exit_code != 0:
-            snippet = output[-self.config.error_output_limit :] if output else ""
+            snippet = output[-self.config.error_output_limit:] if output else ""
             raise RuntimeError(
                 f"Sandbox command failed. Output (truncated): {snippet}"
             )
