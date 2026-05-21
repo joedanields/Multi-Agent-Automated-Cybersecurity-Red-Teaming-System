@@ -20,6 +20,13 @@ from typing import Iterable, List, Optional, Sequence, Set
 
 import docker
 from docker.errors import NotFound
+try:
+    from langsmith import traceable
+except ImportError:  # pragma: no cover - optional dependency
+    def traceable(func=None, **_kwargs):
+        if func is None:
+            return lambda wrapped: wrapped
+        return func
 
 
 class ScopeViolation(RuntimeError):
@@ -253,6 +260,10 @@ class DockerSandbox:
             session, timeout or self.config.command_timeout_seconds
         )
 
+    run_scoped_command = traceable(
+        run_scoped_command, run_type="tool", name="sandbox.run_scoped_command"
+    )
+
     def send_interactive(
         self,
         session: str,
@@ -270,6 +281,10 @@ class DockerSandbox:
         return self._wait_for_prompt(
             session, timeout or self.config.command_timeout_seconds
         )
+
+    send_interactive = traceable(
+        send_interactive, run_type="tool", name="sandbox.send_interactive"
+    )
 
 
 class ScopedToolset:
@@ -289,9 +304,15 @@ class ScopedToolset:
         command = f"nmap {options} {target_list}"
         return self.sandbox.run_scoped_command(command, targets, session="recon")
 
+    nmap_scan = traceable(nmap_scan, run_type="tool", name="tool.nmap_scan")
+
     def execute_payload(self, command: str, targets: Sequence[str]) -> str:
         """
         Execute an exploit payload in the sandbox.
         """
 
         return self.sandbox.run_scoped_command(command, targets, session="exploit")
+
+    execute_payload = traceable(
+        execute_payload, run_type="tool", name="tool.execute_payload"
+    )

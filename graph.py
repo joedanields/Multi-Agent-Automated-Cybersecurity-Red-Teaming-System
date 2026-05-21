@@ -21,6 +21,7 @@ from agents import (
     make_reporting_agent,
     make_vuln_exploit_agent,
 )
+from memory import get_checkpointer
 from state import PentestState
 from tools import DockerSandbox, SandboxConfig, ScopedToolset
 
@@ -115,4 +116,5 @@ def build_graph(
 
     graph.add_edge("report", END)
 
-    return graph.compile(checkpointer=checkpointer)
+    resolved_checkpointer = checkpointer or get_checkpointer()
+    return graph.compile(checkpointer=resolved_checkpointer)
