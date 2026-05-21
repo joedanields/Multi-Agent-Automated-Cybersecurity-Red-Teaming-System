@@ -155,7 +155,7 @@ class DockerSandbox:
                 self.client.networks.get(network_name).disconnect(container)
         return container
 
-    def _exec(self, command: str) -> str:
+    def _exec(self, command: list[str] | str) -> str:
         """
         Execute a command inside the container and return stdout.
         """
@@ -163,8 +163,19 @@ class DockerSandbox:
         result = self.container.exec_run(command, stdout=True, stderr=True)
         output = result.output.decode(errors="replace")
         if result.exit_code != 0:
-            raise RuntimeError(f"Sandbox command failed: {command}\n{output}")
+            snippet = output[-500:] if output else ""
+            raise RuntimeError(
+                "Sandbox command failed. Output (truncated): "
+                f"{snippet}"
+            )
         return output
+
+    def _exec_shell(self, command: str) -> str:
+        """
+        Execute a shell command inside the container (for controlled internal use).
+        """
+
+        return self._exec(["/bin/sh", "-c", command])
 
     def _ensure_tmux_available(self) -> None:
         """
@@ -172,38 +183,45 @@ class DockerSandbox:
         """
 
         try:
-            self._exec("tmux -V")
+            self._exec(["tmux", "-V"])
         except RuntimeError:
             # Kali images typically include tmux; if not, install it.
-            self._exec("apt-get update && apt-get install -y tmux")
+            self._exec_shell("apt-get update && apt-get install -y tmux")
+
+    @staticmethod
+    def _sanitize_session(session: str) -> str:
+        """
+        Constrain tmux session names to safe characters.
+        """
+
+        return re.sub(r"[^A-Za-z0-9_.-]", "_", session)
 
     def _ensure_tmux_session(self, session: str) -> None:
         """
         Create the tmux session if it does not exist and seed a known prompt.
         """
 
-        tmux = f"tmux -L {self.config.tmux_socket_name}"
-        has_session = self.container.exec_run(
-            f"{tmux} has-session -t {session}"
-        )
+        session = self._sanitize_session(session)
+        tmux = ["tmux", "-L", self.config.tmux_socket_name]
+        has_session = self.container.exec_run(tmux + ["has-session", "-t", session])
         if has_session.exit_code != 0:
-            self._exec(f"{tmux} new-session -d -s {session}")
+            self._exec(tmux + ["new-session", "-d", "-s", session])
 
         # Standardize the shell prompt for reliable prompt detection.
         prompt_command = f"export PS1='[sandbox]$ '"
-        self._exec(f"{tmux} send-keys -t {session} \"{prompt_command}\" C-m")
+        self._exec(tmux + ["send-keys", "-t", session, prompt_command, "C-m"])
 
     def _wait_for_prompt(self, session: str, timeout: int) -> str:
         """
         Wait until the expected prompt appears in the tmux buffer.
         """
 
-        tmux = f"tmux -L {self.config.tmux_socket_name}"
+        tmux = ["tmux", "-L", self.config.tmux_socket_name]
         deadline = time.time() + timeout
         buffer_output = ""
         while time.time() < deadline:
             buffer_output = self._exec(
-                f"{tmux} capture-pane -pt {session} -S -200"
+                tmux + ["capture-pane", "-pt", session, "-S", "-200"]
             )
             if re.search(self.config.prompt_regex, buffer_output):
                 return buffer_output
@@ -228,8 +246,9 @@ class DockerSandbox:
             _targets_in_scope([ip], self.scope)
 
         self._ensure_tmux_session(session)
-        tmux = f"tmux -L {self.config.tmux_socket_name}"
-        self._exec(f"{tmux} send-keys -t {session} \"{command}\" C-m")
+        session = self._sanitize_session(session)
+        tmux = ["tmux", "-L", self.config.tmux_socket_name]
+        self._exec(tmux + ["send-keys", "-t", session, command, "C-m"])
         return self._wait_for_prompt(
             session, timeout or self.config.command_timeout_seconds
         )
@@ -245,8 +264,9 @@ class DockerSandbox:
         """
 
         self._ensure_tmux_session(session)
-        tmux = f"tmux -L {self.config.tmux_socket_name}"
-        self._exec(f"{tmux} send-keys -t {session} \"{keystrokes}\"")
+        session = self._sanitize_session(session)
+        tmux = ["tmux", "-L", self.config.tmux_socket_name]
+        self._exec(tmux + ["send-keys", "-t", session, keystrokes])
         return self._wait_for_prompt(
             session, timeout or self.config.command_timeout_seconds
         )

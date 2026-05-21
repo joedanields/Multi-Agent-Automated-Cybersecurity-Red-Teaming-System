@@ -100,6 +100,10 @@ def _nvd_lookup(keyword: str) -> List[Dict[str, Any]]:
             headers=headers,
             timeout=30,
         )
+    except requests.Timeout as exc:
+        raise RuntimeError(
+            f"NVD API request timed out for keyword '{keyword}'."
+        ) from exc
     except requests.RequestException as exc:
         raise RuntimeError(f"NVD API request failed for keyword '{keyword}'.") from exc
 
@@ -130,8 +134,9 @@ def _parse_nvd_entry(entry: Dict[str, Any], asset: str) -> Optional[Vulnerabilit
     cvss_score = 0.0
     severity = "UNKNOWN"
     for key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
-        if key in metrics:
-            metric = metrics[key][0].get("cvssData", {})
+        metrics_list = metrics.get(key, [])
+        if metrics_list:
+            metric = metrics_list[0].get("cvssData", {})
             cvss_score = float(metric.get("baseScore", 0.0))
             severity = metric.get("baseSeverity", "UNKNOWN")
             break
@@ -253,6 +258,14 @@ def make_recon_agent(context: AgentContext):
     return recon_agent
 
 
+def _sanitize_shell_fragment(value: str) -> str:
+    """
+    Sanitize identifiers before interpolating into shell commands.
+    """
+
+    return re.sub(r"[^A-Za-z0-9._-]", "_", value)
+
+
 def make_vuln_exploit_agent(context: AgentContext):
     """
     Vulnerability & exploitation agent: NVD lookup and controlled payload execution.
@@ -315,14 +328,6 @@ def make_vuln_exploit_agent(context: AgentContext):
         }
 
     return vuln_exploit_agent
-
-
-def _sanitize_shell_fragment(value: str) -> str:
-    """
-    Sanitize identifiers before interpolating into shell commands.
-    """
-
-    return re.sub(r"[^A-Za-z0-9._-]", "_", value)
 
 
 def make_post_exploitation_agent(context: AgentContext):
