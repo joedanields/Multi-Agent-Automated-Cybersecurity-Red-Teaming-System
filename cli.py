@@ -68,7 +68,9 @@ def _stream_graph(graph, input_payload, config) -> Optional[dict[str, Any]]:
                 _print_recon_results(updates["recon_results"])
             interrupts = payload.get("interrupts") or []
             if interrupts:
-                interrupt_payload = interrupts[0].get("value")  # type: ignore[assignment]
+                first_interrupt = interrupts[0]
+                if isinstance(first_interrupt, dict):
+                    interrupt_payload = first_interrupt.get("value")
     return interrupt_payload
 
 

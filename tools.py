@@ -235,6 +235,7 @@ class DockerSandbox:
             time.sleep(0.5)
         raise TimeoutError("Timed out waiting for sandbox prompt.")
 
+    @traceable(run_type="tool", name="sandbox.run_scoped_command")
     def run_scoped_command(
         self,
         command: str,
@@ -260,10 +261,7 @@ class DockerSandbox:
             session, timeout or self.config.command_timeout_seconds
         )
 
-    run_scoped_command = traceable(
-        run_scoped_command, run_type="tool", name="sandbox.run_scoped_command"
-    )
-
+    @traceable(run_type="tool", name="sandbox.send_interactive")
     def send_interactive(
         self,
         session: str,
@@ -282,10 +280,6 @@ class DockerSandbox:
             session, timeout or self.config.command_timeout_seconds
         )
 
-    send_interactive = traceable(
-        send_interactive, run_type="tool", name="sandbox.send_interactive"
-    )
-
 
 class ScopedToolset:
     """
@@ -295,6 +289,7 @@ class ScopedToolset:
     def __init__(self, sandbox: DockerSandbox):
         self.sandbox = sandbox
 
+    @traceable(run_type="tool", name="tool.nmap_scan")
     def nmap_scan(self, targets: Sequence[str], options: str = "-sV -T3") -> str:
         """
         Run an Nmap scan in the sandbox with strict scope enforcement.
@@ -304,15 +299,10 @@ class ScopedToolset:
         command = f"nmap {options} {target_list}"
         return self.sandbox.run_scoped_command(command, targets, session="recon")
 
-    nmap_scan = traceable(nmap_scan, run_type="tool", name="tool.nmap_scan")
-
+    @traceable(run_type="tool", name="tool.execute_payload")
     def execute_payload(self, command: str, targets: Sequence[str]) -> str:
         """
         Execute an exploit payload in the sandbox.
         """
 
         return self.sandbox.run_scoped_command(command, targets, session="exploit")
-
-    execute_payload = traceable(
-        execute_payload, run_type="tool", name="tool.execute_payload"
-    )

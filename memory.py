@@ -11,8 +11,10 @@ import pickle
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import ChannelVersions, Checkpoint, CheckpointMetadata
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -91,12 +93,24 @@ class DiskBackedMemorySaver(InMemorySaver):
             ) from exc
         self._restore(payload)
 
-    def put(self, config, checkpoint, metadata, new_versions):  # type: ignore[override]
+    def put(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+    ) -> RunnableConfig:
         updated = super().put(config, checkpoint, metadata, new_versions)
         self._persist_to_disk()
         return updated
 
-    def put_writes(self, config, writes, task_id, task_path=""):  # type: ignore[override]
+    def put_writes(
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
         super().put_writes(config, writes, task_id, task_path=task_path)
         self._persist_to_disk()
 
