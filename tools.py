@@ -26,7 +26,9 @@ class ScopeViolation(RuntimeError):
     """Raised when a command attempts to access a target outside authorized scope."""
 
 
-def _normalize_scope(scope: Sequence[str]) -> List[ipaddress._BaseNetwork]:
+def _normalize_scope(
+    scope: Sequence[str],
+) -> List[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     """
     Normalize a list of IPs/subnets into ipaddress network objects.
     """
@@ -83,7 +85,7 @@ class SandboxConfig:
     container_name: str = "kali-sandbox"
     management_network: str = "decepticon-net"
     sandbox_network: str = "sandbox-net"
-    tmux_socket_name: str = "pentest"
+    tmux_socket_name: str = "redteam-sandbox"
     prompt_regex: str = r"\[sandbox\]\$ "
     command_timeout_seconds: int = 300
 

@@ -24,6 +24,8 @@ from agents import (
 from state import PentestState
 from tools import DockerSandbox, SandboxConfig, ScopedToolset
 
+APPROVED_RESPONSES = {"y", "yes", "approve", "approved", "true"}
+
 
 def _build_context(
     scope: list[str],
@@ -56,7 +58,7 @@ def _hitl_approval_node(state: PentestState) -> Dict[str, Any]:
             "pending_payload": pending,
         }
     )
-    approved = str(response).strip().lower() in {"y", "yes", "approve", "approved", "true"}
+    approved = str(response).strip().lower() in APPROVED_RESPONSES
     exploitation_results = dict(state.get("exploitation_results", {}))
     exploitation_results["approved"] = approved
     return {"exploitation_results": exploitation_results}

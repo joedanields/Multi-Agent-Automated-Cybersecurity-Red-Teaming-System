@@ -93,12 +93,21 @@ def _nvd_lookup(keyword: str) -> List[Dict[str, Any]]:
     api_key = os.getenv("NVD_API_KEY")
     headers = {"apiKey": api_key} if api_key else {}
     params = {"keywordSearch": keyword, "resultsPerPage": 20}
-    response = requests.get(
-        "https://services.nvd.nist.gov/rest/json/cves/2.0",
-        params=params,
-        headers=headers,
-        timeout=30,
-    )
+    try:
+        response = requests.get(
+            "https://services.nvd.nist.gov/rest/json/cves/2.0",
+            params=params,
+            headers=headers,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"NVD API request failed for keyword '{keyword}'.") from exc
+
+    if response.status_code == 403:
+        raise RuntimeError("NVD API access denied. Check the NVD_API_KEY.")
+    if response.status_code == 429:
+        raise RuntimeError("NVD API rate limit exceeded. Consider backoff or API key.")
+
     response.raise_for_status()
     return response.json().get("vulnerabilities", [])
 
@@ -264,8 +273,10 @@ def make_vuln_exploit_agent(context: AgentContext):
                     vulnerabilities.append(finding)
 
         vulnerabilities.sort(
-            key=lambda item: (_severity_rank(item["severity"]), item["cvss_score"]),
-            reverse=True,
+            key=lambda item: (
+                -_severity_rank(item["severity"]),
+                -item["cvss_score"],
+            )
         )
 
         exploitation_results = dict(state.get("exploitation_results", {}))
@@ -275,8 +286,9 @@ def make_vuln_exploit_agent(context: AgentContext):
             targets = [asset["host"] for asset in assets if asset.get("host")]
             payload_commands = []
             for finding in vulnerabilities[:3]:
+                safe_cve = _sanitize_shell_fragment(finding["cve_id"])
                 payload_commands.append(
-                    f"echo 'Simulated exploit for {finding['cve_id']}'"
+                    f"echo Simulated_exploit_for_{safe_cve}"
                 )
 
             payload_outputs = []
@@ -304,6 +316,14 @@ def make_vuln_exploit_agent(context: AgentContext):
         }
 
     return vuln_exploit_agent
+
+
+def _sanitize_shell_fragment(value: str) -> str:
+    """
+    Sanitize identifiers before interpolating into shell commands.
+    """
+
+    return re.sub(r"[^A-Za-z0-9._-]", "_", value)
 
 
 def make_post_exploitation_agent(context: AgentContext):
