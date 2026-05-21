@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  management:
+    image: python:3.11-slim
+    command: ["sleep", "infinity"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: redteam
+      POSTGRES_USER: redteam
+      POSTGRES_PASSWORD: redteam
+    networks:
+      - decepticon-net
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: redteam
+      POSTGRES_USER: redteam
+      POSTGRES_PASSWORD: redteam
+    networks:
+      - decepticon-net
+
+  kali-sandbox:
+    image: kalilinux/kali-rolling
+    command: ["sleep", "infinity"]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - sandbox-net
+
+networks:
+  decepticon-net:
+    driver: bridge
+  sandbox-net:
+    driver: bridge
+    internal: true
