@@ -89,7 +89,8 @@ class DiskBackedMemorySaver(InMemorySaver):
                 payload = pickle.load(handle)
         except (OSError, pickle.UnpicklingError) as exc:  # pragma: no cover - safety net
             raise RuntimeError(
-                f"Failed to load checkpoints from {self.path}."
+                f"Failed to load checkpoints from {self.path}: "
+                f"{type(exc).__name__}: {exc}"
             ) from exc
         self._restore(payload)
 

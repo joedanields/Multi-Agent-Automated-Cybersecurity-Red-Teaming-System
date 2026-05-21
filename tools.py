@@ -16,6 +16,7 @@ import ipaddress
 import re
 import time
 from dataclasses import dataclass
+import functools
 from typing import Iterable, List, Optional, Sequence, Set
 
 import docker
@@ -24,9 +25,12 @@ try:
     from langsmith import traceable
 except ImportError:  # pragma: no cover - optional dependency
     def traceable(func=None, **_kwargs):
+        def decorator(wrapped):
+            return functools.wraps(wrapped)(wrapped)
+
         if func is None:
-            return lambda wrapped: wrapped
-        return func
+            return decorator
+        return decorator(func)
 
 
 class ScopeViolation(RuntimeError):
@@ -235,7 +239,7 @@ class DockerSandbox:
             time.sleep(0.5)
         raise TimeoutError("Timed out waiting for sandbox prompt.")
 
-    @traceable(run_type="tool", name="sandbox.run_scoped_command")
+    @traceable(run_type="tool", name="tool.run_scoped_command")
     def run_scoped_command(
         self,
         command: str,
@@ -261,7 +265,7 @@ class DockerSandbox:
             session, timeout or self.config.command_timeout_seconds
         )
 
-    @traceable(run_type="tool", name="sandbox.send_interactive")
+    @traceable(run_type="tool", name="tool.send_interactive")
     def send_interactive(
         self,
         session: str,

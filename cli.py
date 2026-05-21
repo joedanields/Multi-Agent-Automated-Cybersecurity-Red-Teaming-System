@@ -97,11 +97,26 @@ def _display_interrupt(interrupt_payload: dict[str, Any], thread_id: str) -> Non
             print(json.dumps(pending, indent=2))
 
 
+def _has_valid_checkpoint(snapshot: Any) -> bool:
+    """
+    Determine whether a state snapshot contains resumable data.
+    """
+
+    return any(
+        [
+            getattr(snapshot, "values", None),
+            getattr(snapshot, "interrupts", None),
+            getattr(snapshot, "next", None),
+            getattr(snapshot, "tasks", None),
+        ]
+    )
+
+
 def _resume_prompt(
     graph, config: dict[str, Any], thread_id: str
 ) -> Optional[dict[str, Any]]:
     snapshot = graph.get_state(config)
-    if not snapshot.values and not snapshot.interrupts and not snapshot.next:
+    if not _has_valid_checkpoint(snapshot):
         print(f"[HITL] No checkpoint found for thread ID {thread_id}.")
         return None
     if snapshot.values:

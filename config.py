@@ -67,8 +67,8 @@ def load_env(path: Path = DEFAULT_ENV_PATH) -> None:
         entry = line.strip()
         if not entry or entry.startswith("#"):
             continue
-        key, _, value = entry.partition("=")
-        if not key or not _:
+        key, separator, value = entry.partition("=")
+        if not key or not separator:
             continue
         cleaned = value.strip().strip("'").strip('"')
         os.environ.setdefault(key.strip(), cleaned)
