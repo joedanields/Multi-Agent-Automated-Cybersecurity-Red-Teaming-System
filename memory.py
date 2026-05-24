@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from langgraph.checkpoint.memory import InMemorySaver
 try:
@@ -19,8 +19,9 @@ except ImportError:  # pragma: no cover - optional dependency
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from langgraph.checkpoint.sqlite import SqliteSaver as SqliteSaverType
+    Checkpointer: TypeAlias = InMemorySaver | SqliteSaverType
 else:  # pragma: no cover - typing only
-    SqliteSaverType = InMemorySaver
+    Checkpointer: TypeAlias = Any
 
 
 DEFAULT_CHECKPOINT_PATH = Path(
@@ -49,7 +50,7 @@ def _sqlite_conn_string(path: Path) -> str:
 
 def get_checkpointer(
     config: CheckpointConfig | None = None,
-) -> InMemorySaver | SqliteSaverType:
+) -> Checkpointer:
     """
     Build a checkpointer based on environment configuration.
 
@@ -63,7 +64,8 @@ def get_checkpointer(
         if SqliteSaver is None:  # pragma: no cover - safety net
             raise ImportError(
                 "SqliteSaver is required for persistent checkpoints. "
-                "Install langgraph with sqlite support."
+                "Install LangGraph with sqlite support (e.g., "
+                "pip install 'langgraph[sqlite]')."
             )
         config.path.parent.mkdir(parents=True, exist_ok=True)
         return SqliteSaver.from_conn_string(_sqlite_conn_string(config.path))
