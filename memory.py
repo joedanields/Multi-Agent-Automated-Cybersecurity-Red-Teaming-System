@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING
 
 from langgraph.checkpoint.memory import InMemorySaver
 try:
@@ -18,10 +18,7 @@ except ImportError:  # pragma: no cover - optional dependency
     SqliteSaver = None
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from langgraph.checkpoint.sqlite import SqliteSaver as SqliteSaverType
-    Checkpointer: TypeAlias = InMemorySaver | SqliteSaverType
-else:  # pragma: no cover - typing only
-    Checkpointer: TypeAlias = Any
+    from langgraph.checkpoint.sqlite import SqliteSaver
 
 
 DEFAULT_CHECKPOINT_PATH = Path(".data") / "pentest_checkpoints.sqlite"
@@ -47,13 +44,13 @@ class CheckpointConfig:
         path = path.resolve()
         return cls(backend=backend, path=path)
 
-def _sqlite_conn_string(path: Path) -> str:
+def _build_sqlite_uri(path: Path) -> str:
     return f"sqlite:///{path.as_posix()}"
 
 
 def get_checkpointer(
     config: CheckpointConfig | None = None,
-) -> Checkpointer:
+) -> InMemorySaver | "SqliteSaver":
     """
     Build a checkpointer based on environment configuration.
 
@@ -71,5 +68,5 @@ def get_checkpointer(
                 "pip install 'langgraph[sqlite]')."
             )
         config.path.parent.mkdir(parents=True, exist_ok=True)
-        return SqliteSaver.from_conn_string(_sqlite_conn_string(config.path))
+        return SqliteSaver.from_conn_string(_build_sqlite_uri(config.path))
     raise ValueError(f"Unsupported checkpoint backend: {config.backend}")
