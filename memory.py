@@ -46,8 +46,7 @@ class CheckpointConfig:
         return cls(backend=backend, path=path)
 
 def _sqlite_conn_string(path: Path) -> str:
-    resolved = path.expanduser().resolve()
-    return f"sqlite:///{resolved.as_posix()}"
+    return f"sqlite:///{path.as_posix()}"
 
 
 def get_checkpointer(
