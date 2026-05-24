@@ -24,7 +24,7 @@ else:  # pragma: no cover - typing only
     Checkpointer: TypeAlias = Any
 
 
-DEFAULT_CHECKPOINT_PATH = (Path.cwd() / ".data" / "pentest_checkpoints.sqlite").resolve()
+DEFAULT_CHECKPOINT_PATH = Path(".data") / "pentest_checkpoints.sqlite"
 
 
 @dataclass(frozen=True)
@@ -38,8 +38,10 @@ class CheckpointConfig:
 
     @classmethod
     def from_env(cls) -> "CheckpointConfig":
-        backend = os.getenv("PENTEST_CHECKPOINT_BACKEND", "sqlite").strip().lower()
-        path = Path(os.getenv("PENTEST_CHECKPOINT_PATH", str(DEFAULT_CHECKPOINT_PATH))).expanduser()
+        backend = os.getenv("PENTEST_CHECKPOINT_BACKEND", "disk").strip().lower()
+        raw_path = os.getenv("PENTEST_CHECKPOINT_PATH")
+        path = Path(raw_path) if raw_path else DEFAULT_CHECKPOINT_PATH
+        path = path.expanduser()
         if not path.is_absolute():
             path = Path.cwd() / path
         path = path.resolve()
