@@ -44,10 +44,12 @@ def _sqlite_conn_string(path: Path) -> str:
 def get_checkpointer(config: CheckpointConfig | None = None):
     """
     Build a checkpointer based on environment configuration.
+
+    Note: the "disk" backend is an alias for the SQLite checkpointer.
     """
 
     config = config or CheckpointConfig.from_env()
-    if config.backend in {"memory", "in-memory", "mem"}:
+    if config.backend == "memory":
         return InMemorySaver()
     if config.backend in {"sqlite", "disk"}:
         if SqliteSaver is None:  # pragma: no cover - safety net
