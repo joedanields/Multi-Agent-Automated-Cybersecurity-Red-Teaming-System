@@ -89,6 +89,10 @@ def configure_tracing(env_path: Path | None = None) -> TracingConfig:
             os.environ.setdefault("LANGCHAIN_API_KEY", config.api_key)
         if config.hide_inputs:
             os.environ.setdefault("LANGCHAIN_HIDE_INPUTS", "true")
+        else:
+            os.environ.setdefault("LANGCHAIN_HIDE_INPUTS", "false")
         if config.hide_outputs:
             os.environ.setdefault("LANGCHAIN_HIDE_OUTPUTS", "true")
+        else:
+            os.environ.setdefault("LANGCHAIN_HIDE_OUTPUTS", "false")
     return config

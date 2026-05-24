@@ -155,12 +155,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--base-url", help="Override local LLM base URL.")
     parser.add_argument(
         "--checkpoint-backend",
-        choices=["disk", "memory"],
-        help="Override checkpoint backend selection.",
+        choices=["disk", "memory", "sqlite"],
+        help="Override checkpoint backend selection (disk uses sqlite).",
     )
     parser.add_argument(
         "--checkpoint-path",
-        help="Override checkpoint storage path.",
+        help="Override checkpoint storage path (sqlite file when using disk/sqlite).",
     )
     args = parser.parse_args(argv)
 
