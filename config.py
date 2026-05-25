@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Tuple
 
 
 DEFAULT_ENV_PATH = Path(os.getenv("PENTEST_ENV_PATH", ".env"))
@@ -21,11 +22,21 @@ class TracingConfig:
     """
 
     enabled: bool
+    requested: bool
     endpoint: str
     project: str
     api_key: str
     hide_inputs: bool
     hide_outputs: bool
+    missing: Tuple[str, ...]
+
+    @property
+    def status(self) -> str:
+        if self.enabled:
+            return "enabled"
+        if self.requested and self.missing:
+            return "misconfigured"
+        return "disabled"
 
     @classmethod
     def from_env(cls) -> "TracingConfig":
@@ -34,8 +45,15 @@ class TracingConfig:
             "LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com"
         ).strip()
         project = os.getenv("LANGCHAIN_PROJECT", "multi-agent-red-team").strip()
-        tracing_flag = os.getenv("LANGCHAIN_TRACING_V2", "").strip().lower()
-        enabled = tracing_flag in {"1", "true", "yes"} if tracing_flag else bool(api_key)
+        tracing_flag_raw = os.getenv("LANGCHAIN_TRACING_V2", "").strip()
+        tracing_flag = tracing_flag_raw.lower()
+        requested = tracing_flag in {"1", "true", "yes"}
+        missing: list[str] = []
+        if not tracing_flag_raw:
+            missing.append("LANGCHAIN_TRACING_V2")
+        if not api_key:
+            missing.append("LANGCHAIN_API_KEY")
+        enabled = requested and bool(api_key)
         hide_inputs = os.getenv("LANGCHAIN_HIDE_INPUTS", "").strip().lower() in {
             "1",
             "true",
@@ -48,11 +66,13 @@ class TracingConfig:
         }
         return cls(
             enabled=enabled,
+            requested=requested,
             endpoint=endpoint,
             project=project,
             api_key=api_key,
             hide_inputs=hide_inputs,
             hide_outputs=hide_outputs,
+            missing=tuple(missing),
         )
 
 
