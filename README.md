@@ -1,24 +1,83 @@
-# Multi-Agent-Automated-Cybersecurity-Red-Teaming-System
-an autonomous "Vibe Hacking" multi-agent ecosystem designed to proactively simulate coordinated cyberattacks and identify systemic vulnerabilities before malicious actors exploit them.
+# Multi-Agent Automated Cybersecurity Red Teaming System
 
-## Observability (LangSmith)
-Tracing is configured via environment variables (see `.env.example` for a template):
+Autonomous LangGraph-driven red team orchestration with isolated Docker execution, strict scope enforcement, and human-in-the-loop approvals.
 
-- `LANGCHAIN_TRACING_V2` (set to `true` to enable tracing)
-- `LANGCHAIN_ENDPOINT` (defaults to `https://api.smith.langchain.com`)
-- `LANGCHAIN_API_KEY` (LangSmith API key)
-- `LANGCHAIN_PROJECT` (project name for grouping runs)
-- `LANGCHAIN_HIDE_INPUTS` / `LANGCHAIN_HIDE_OUTPUTS` (optional redaction toggles)
+## Architecture Overview
 
-## Checkpointing
-Checkpoint persistence can be configured via:
+- **LangGraph topology**: Orchestrator routes to Recon, Vulnerability/Exploit, HITL Approval, Post-Exploitation, and Reporting nodes.
+- **State model**: `PentestState` is the single source of truth for routing and checkpoint persistence.
+- **Isolation**: The Kali sandbox runs only on `sandbox-net` while the host orchestrator operates on `decepticon-net`. All offensive tooling is executed inside the container.
+- **Scope enforcement**: Targets are validated against explicit IP/CIDR/hostname scope checks. Out-of-scope attempts are blocked.
 
-- `PENTEST_CHECKPOINT_BACKEND` (`disk` or `memory`)
-- `PENTEST_CHECKPOINT_PATH` (file path for disk-backed checkpoints)
+## Setup Instructions
 
-## CLI
-Launch an engagement via:
+### Prerequisites
+
+- Python 3.11+
+- Docker Desktop (or Docker Engine)
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and set values:
+
+- `LANGCHAIN_TRACING_V2=true`
+- `LANGCHAIN_API_KEY=...` (required for LangSmith)
+- `LANGCHAIN_PROJECT=multi-agent-red-team`
+- `LANGCHAIN_ENDPOINT=https://api.smith.langchain.com`
+- `LANGCHAIN_HIDE_INPUTS` / `LANGCHAIN_HIDE_OUTPUTS` (optional)
+- `PENTEST_CHECKPOINT_BACKEND=disk` (or `memory`)
+- `PENTEST_CHECKPOINT_PATH=.data/pentest_checkpoints.pkl`
+
+### Virtual Environment
+
+```
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -e .[test]
+```
+
+## Execution Commands
+
+### Start a New Engagement
 
 ```
 python cli.py --target 192.168.1.0/24
 ```
+
+You can pass multiple targets:
+
+```
+python cli.py --target 10.0.0.1 --target 10.0.0.2
+```
+
+The CLI prints a `thread_id` for resumable HITL checkpoints.
+
+### Resume After HITL Pause
+
+```
+python cli.py --resume --thread-id <thread_id>
+```
+
+If you provide `--target` with `--resume`, it must match the checkpoint scope exactly. Mismatches are blocked to prevent scope drift:
+
+```
+python cli.py --resume --thread-id <thread_id> --target 192.168.1.0/24
+```
+
+When prompted, approve the payload to continue. The system resumes with `Command(resume="approved")`.
+
+## Observability
+
+LangSmith tracing is enabled only when both `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` are present. If disabled or misconfigured, the CLI emits a high-visibility warning.
+
+## CI/CD and Testing
+
+Run checks locally:
+
+```
+ruff check .
+bandit -r . -x .venv
+pytest -q
+```
+
+The GitHub Actions workflow executes the same steps on each push and pull request to `main`.

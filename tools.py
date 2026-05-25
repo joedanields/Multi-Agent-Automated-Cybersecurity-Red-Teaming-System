@@ -12,12 +12,15 @@ Key requirements implemented here:
 
 from __future__ import annotations
 
+import functools
 import ipaddress
 import re
+import shlex
+import socket
 import time
 from dataclasses import dataclass
-import functools
 from typing import Iterable, List, Optional, Sequence, Set
+from urllib.parse import urlparse
 
 import docker
 from docker.errors import NotFound
@@ -37,32 +40,143 @@ class ScopeViolation(RuntimeError):
     """Raised when a command attempts to access a target outside authorized scope."""
 
 
+_IPV4_CIDR_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b")
+_IPV6_CIDR_PATTERN = re.compile(r"\b(?:[A-Fa-f0-9]{0,4}:){2,7}[A-Fa-f0-9]{0,4}(?:/\d{1,3})?\b")
+_HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9-]{2,63}$"
+)
+
+
+def _strip_wrapping(value: str) -> str:
+    """
+    Remove wrapping punctuation around tokens (URLs, brackets, etc.).
+    """
+
+    return value.strip("[](){}<>,;\"'")
+
+
+def _looks_like_hostname(value: str) -> bool:
+    """
+    Heuristic for hostname detection without over-matching flags/verbs.
+    """
+
+    if value == "localhost":
+        return True
+    if "." not in value:
+        return False
+    return bool(_HOSTNAME_PATTERN.match(value))
+
+
+def _resolve_hostname(
+    hostname: str,
+) -> Set[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """
+    Resolve hostnames to IP addresses for scope enforcement.
+    """
+
+    try:
+        info = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ScopeViolation(
+            f"Hostname {hostname} could not be resolved for scope validation."
+        ) from exc
+
+    addresses: Set[ipaddress.IPv4Address | ipaddress.IPv6Address] = set()
+    for _, _, _, _, sockaddr in info:
+        ip_text = sockaddr[0]
+        if "%" in ip_text:
+            ip_text = ip_text.split("%", 1)[0]
+        try:
+            addresses.add(ipaddress.ip_address(ip_text))
+        except ValueError:
+            continue
+    if not addresses:
+        raise ScopeViolation(
+            f"Hostname {hostname} resolved to no valid IP addresses."
+        )
+    return addresses
+
+
 def _normalize_scope(
     scope: Sequence[str],
 ) -> List[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     """
-    Normalize a list of IPs/subnets into ipaddress network objects.
+    Normalize a list of IPs/subnets/hostnames into ipaddress network objects.
     """
 
     networks: List[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for entry in scope:
+        entry = entry.strip()
+        if not entry:
+            continue
         # Convert plain IPs to /32 or /128 networks for consistent checks.
         if "/" not in entry:
-            ip = ipaddress.ip_address(entry)
-            networks.append(
-                ipaddress.ip_network(f"{ip}/{ip.max_prefixlen}", strict=False)
-            )
+            try:
+                ip = ipaddress.ip_address(entry)
+            except ValueError:
+                for resolved in _resolve_hostname(entry):
+                    networks.append(
+                        ipaddress.ip_network(
+                            f"{resolved}/{resolved.max_prefixlen}", strict=False
+                        )
+                    )
+            else:
+                networks.append(
+                    ipaddress.ip_network(f"{ip}/{ip.max_prefixlen}", strict=False)
+                )
         else:
-            networks.append(ipaddress.ip_network(entry, strict=False))
+            try:
+                networks.append(ipaddress.ip_network(entry, strict=False))
+            except ValueError as exc:
+                raise ScopeViolation(f"Invalid scope entry {entry}.") from exc
     return networks
 
 
-def _extract_ipv4_targets(command: str) -> Set[str]:
+def _extract_command_targets(command: str) -> Set[str]:
     """
-    Extract IPv4 addresses from a command string to guard against hidden targets.
+    Extract IPs, CIDRs, and hostnames from a command string.
     """
 
-    return set(re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", command))
+    targets: Set[str] = set()
+
+    for match in _IPV4_CIDR_PATTERN.findall(command):
+        targets.add(match)
+    for match in _IPV6_CIDR_PATTERN.findall(command):
+        targets.add(match)
+
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+
+    for token in tokens:
+        raw_token = token
+        token = _strip_wrapping(token)
+        if not token or token.startswith("-"):
+            continue
+
+        if "://" in token:
+            parsed = urlparse(token)
+            if parsed.hostname:
+                targets.add(parsed.hostname)
+                continue
+
+        if token.count(":") == 1 and not token.startswith("["):
+            parsed = urlparse(f"tcp://{token}")
+            if parsed.hostname:
+                targets.add(parsed.hostname)
+                continue
+
+        if raw_token.startswith("[") and "]" in raw_token:
+            bracketed = raw_token[1 : raw_token.index("]")]
+            if bracketed:
+                targets.add(bracketed)
+                continue
+
+        if _looks_like_hostname(token):
+            targets.add(token)
+
+    return targets
 
 
 def _targets_in_scope(targets: Iterable[str], scope: Sequence[str]) -> None:
@@ -71,16 +185,35 @@ def _targets_in_scope(targets: Iterable[str], scope: Sequence[str]) -> None:
     """
 
     networks = _normalize_scope(scope)
+    if not networks:
+        raise ScopeViolation("No authorized scope configured.")
+
     for target in targets:
+        if not target:
+            continue
         if "/" in target:
-            target_network = ipaddress.ip_network(target, strict=False)
-            if not any(target_network.subnet_of(network) for network in networks):
+            try:
+                target_network = ipaddress.ip_network(target, strict=False)
+            except ValueError as exc:
+                raise ScopeViolation(f"Invalid CIDR target {target}.") from exc
+
+            same_family = [net for net in networks if net.version == target_network.version]
+            if not same_family or not any(
+                target_network.subnet_of(network) for network in same_family
+            ):
                 raise ScopeViolation(
                     f"Target {target} is outside the authorized engagement scope."
                 )
-        else:
-            ip = ipaddress.ip_address(target)
-            if not any(ip in network for network in networks):
+            continue
+
+        try:
+            addresses = {ipaddress.ip_address(target)}
+        except ValueError:
+            addresses = _resolve_hostname(target)
+
+        for ip in addresses:
+            same_family = [net for net in networks if net.version == ip.version]
+            if not same_family or not any(ip in network for network in same_family):
                 raise ScopeViolation(
                     f"Target {target} is outside the authorized engagement scope."
                 )
@@ -100,6 +233,14 @@ class SandboxConfig:
     prompt_regex: str = r"\[sandbox\]\$ "
     command_timeout_seconds: int = 300
     error_output_limit: int = 500
+    memory_limit: str = "1g"
+    cpu_limit: float = 1.0
+    pids_limit: int = 256
+    read_only_rootfs: bool = True
+    workspace_dir: str = "/workspace"
+    workspace_tmpfs_size: str = "256m"
+    run_as_user: str = "1000:1000"
+    seccomp_profile: str = "default"
 
 
 class DockerSandbox:
@@ -154,7 +295,18 @@ class DockerSandbox:
                 tty=True,
                 stdin_open=True,
                 network=self.config.sandbox_network,
-                security_opt=["no-new-privileges:true"],
+                user=self.config.run_as_user,
+                working_dir=self.config.workspace_dir,
+                read_only=self.config.read_only_rootfs,
+                tmpfs={
+                    self.config.workspace_dir: (
+                        f"rw,noexec,nosuid,size={self.config.workspace_tmpfs_size}"
+                    )
+                },
+                mem_limit=self.config.memory_limit,
+                nano_cpus=self._nano_cpus(),
+                pids_limit=self.config.pids_limit,
+                security_opt=self._security_opts(),
             )
         else:
             if container.status != "running":
@@ -195,9 +347,27 @@ class DockerSandbox:
 
         try:
             self._exec(["tmux", "-V"])
-        except RuntimeError:
-            # Kali images typically include tmux; if not, install it.
-            self._exec_shell("apt-get update && apt-get install -y tmux")
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "tmux is not available in the sandbox image. "
+                "Bake tmux into the Kali image before running the sandbox."
+            ) from exc
+
+    def _nano_cpus(self) -> int:
+        """
+        Convert CPU limit to Docker nano_cpus units.
+        """
+
+        nano_cpus = int(self.config.cpu_limit * 1_000_000_000)
+        return nano_cpus if nano_cpus > 0 else 1_000_000_000
+
+    def _security_opts(self) -> list[str]:
+        """
+        Build security options for container hardening.
+        """
+
+        seccomp_profile = self.config.seccomp_profile or "default"
+        return ["no-new-privileges:true", f"seccomp={seccomp_profile}"]
 
     @staticmethod
     def _sanitize_session(session: str) -> str:
@@ -253,9 +423,9 @@ class DockerSandbox:
 
         _targets_in_scope(targets, self.scope)
 
-        # Double-check any IPs embedded in the command to prevent stealth violations.
-        for ip in _extract_ipv4_targets(command):
-            _targets_in_scope([ip], self.scope)
+        # Double-check any embedded targets (IPs, CIDRs, hostnames) to prevent violations.
+        for target in _extract_command_targets(command):
+            _targets_in_scope([target], self.scope)
 
         self._ensure_tmux_session(session)
         session = self._sanitize_session(session)
