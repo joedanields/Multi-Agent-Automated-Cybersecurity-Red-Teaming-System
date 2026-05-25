@@ -6,6 +6,8 @@ requires-python = ">=3.11"
 dependencies = [
     "langgraph>=0.2.0",
     "langchain-core>=0.2.0",
+    "langgraph-checkpoint-postgres>=0.0.5",
+    "psycopg[binary,pool]>=3.1.18",
     "docker>=7.0.0",
     "requests>=2.31.0",
 ]
@@ -15,6 +17,8 @@ test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-timeout>=2.3.0",
+    "aiosqlite>=0.20.0",
+    "pytest-mock>=3.14.0",
     "ruff>=0.5.0",
 ]
 
