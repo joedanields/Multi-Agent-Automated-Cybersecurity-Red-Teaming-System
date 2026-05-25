@@ -6,6 +6,7 @@ LangGraph topology and routing logic for the autonomous multi-agent red team.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, Optional
 
@@ -24,6 +25,8 @@ from agents import (
 from memory import get_checkpointer
 from state import PentestState
 from tools import DockerSandbox, SandboxConfig, ScopedToolset
+
+LOGGER = logging.getLogger("redteam.graph")
 
 APPROVED_RESPONSES = {"y", "yes", "approve", "approved", "true"}
 
@@ -52,6 +55,8 @@ def _hitl_approval_node(state: PentestState) -> Dict[str, Any]:
     if not pending:
         return {}
 
+    LOGGER.warning("event=hitl_interrupt")
+
     response = interrupt(
         {
             "type": "approval",
@@ -62,6 +67,7 @@ def _hitl_approval_node(state: PentestState) -> Dict[str, Any]:
     approved = str(response).strip().lower() in APPROVED_RESPONSES
     exploitation_results = dict(state.get("exploitation_results", {}))
     exploitation_results["approved"] = approved
+    LOGGER.info("event=hitl_approval approved=%s", approved)
     return {"exploitation_results": exploitation_results}
 
 
@@ -78,7 +84,16 @@ def build_graph(
     context = _build_context(scope, model=model, base_url=base_url)
     graph = StateGraph(PentestState)
 
-    graph.add_node("orchestrator", make_orchestrator(context))
+    orchestrator_node = make_orchestrator(context)
+
+    def _logged_orchestrator(state: PentestState) -> Dict[str, Any]:
+        updates = orchestrator_node(state)
+        decision = updates.get("scan_results", {}).get("orchestrator_decision")
+        if decision:
+            LOGGER.info("event=route_decision decision=%s", decision)
+        return updates
+
+    graph.add_node("orchestrator", _logged_orchestrator)
     graph.add_node("recon", make_recon_agent(context))
     graph.add_node("vuln_exploit", make_vuln_exploit_agent(context))
     graph.add_node("hitl_approval", _hitl_approval_node)
