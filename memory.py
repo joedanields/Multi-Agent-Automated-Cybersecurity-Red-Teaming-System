@@ -6,12 +6,14 @@ Persistent checkpointing utilities for LangGraph workflows.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import pickle
+import socket
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Iterable, Optional, Sequence
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import ChannelVersions, Checkpoint, CheckpointMetadata
@@ -129,3 +131,124 @@ def get_checkpointer(config: CheckpointConfig | None = None) -> InMemorySaver:
     if config.backend == "memory":
         return InMemorySaver()
     return DiskBackedMemorySaver(config.path)
+
+
+def _extract_checkpoint_values(checkpoint: Any) -> Optional[Dict[str, Any]]:
+    if checkpoint is None:
+        return None
+    if hasattr(checkpoint, "checkpoint"):
+        checkpoint = checkpoint.checkpoint
+    if isinstance(checkpoint, tuple) and checkpoint:
+        checkpoint = checkpoint[0]
+    if isinstance(checkpoint, dict):
+        if "values" in checkpoint and isinstance(checkpoint["values"], dict):
+            return checkpoint["values"]
+        if "channel_values" in checkpoint and isinstance(
+            checkpoint["channel_values"], dict
+        ):
+            channel_values = checkpoint["channel_values"]
+            if "__root__" in channel_values and isinstance(
+                channel_values["__root__"], dict
+            ):
+                return channel_values["__root__"]
+            return channel_values
+        if "state" in checkpoint and isinstance(checkpoint["state"], dict):
+            return checkpoint["state"]
+    return None
+
+
+def load_checkpoint_state(
+    checkpointer: InMemorySaver, thread_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Load the most recent checkpointed state for a thread.
+    """
+
+    if not thread_id:
+        return None
+
+    config = {"configurable": {"thread_id": thread_id}}
+    if hasattr(checkpointer, "get_tuple"):
+        try:
+            checkpoint_tuple = checkpointer.get_tuple(config)
+        except TypeError:
+            checkpoint_tuple = None
+        values = _extract_checkpoint_values(checkpoint_tuple)
+        if values is not None:
+            return values
+
+    if hasattr(checkpointer, "get"):
+        try:
+            checkpoint = checkpointer.get(config)
+        except TypeError:
+            checkpoint = None
+        values = _extract_checkpoint_values(checkpoint)
+        if values is not None:
+            return values
+
+    storage = getattr(checkpointer, "storage", None)
+    if storage and thread_id in storage:
+        namespaces = storage.get(thread_id, {})
+        for checkpoints in namespaces.values():
+            if not checkpoints:
+                continue
+            last_checkpoint = next(reversed(checkpoints.values()))
+            values = _extract_checkpoint_values(last_checkpoint)
+            if values is not None:
+                return values
+
+    return None
+
+
+def _resolve_hostname(
+    hostname: str,
+) -> Iterable[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        info = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise RuntimeError(
+            f"Hostname {hostname} could not be resolved for scope validation."
+        ) from exc
+
+    addresses = set()
+    for _, _, _, _, sockaddr in info:
+        ip_text = sockaddr[0]
+        if "%" in ip_text:
+            ip_text = ip_text.split("%", 1)[0]
+        try:
+            addresses.add(ipaddress.ip_address(ip_text))
+        except ValueError:
+            continue
+    if not addresses:
+        raise RuntimeError(f"Hostname {hostname} resolved to no valid IP addresses.")
+    return addresses
+
+
+def normalize_scope_entries(scope: Sequence[str]) -> set[str]:
+    """
+    Normalize a scope list into canonical network strings for comparison.
+    """
+
+    normalized: set[str] = set()
+    for entry in scope:
+        entry = entry.strip()
+        if not entry:
+            continue
+        if "/" in entry:
+            network = ipaddress.ip_network(entry, strict=False)
+            normalized.add(str(network))
+            continue
+        try:
+            ip = ipaddress.ip_address(entry)
+        except ValueError:
+            for resolved in _resolve_hostname(entry):
+                network = ipaddress.ip_network(
+                    f"{resolved}/{resolved.max_prefixlen}", strict=False
+                )
+                normalized.add(str(network))
+            continue
+        normalized.add(
+            str(ipaddress.ip_network(f"{ip}/{ip.max_prefixlen}", strict=False))
+        )
+
+    return normalized
